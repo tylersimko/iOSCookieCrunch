@@ -9,61 +9,78 @@
 import UIKit
 import SpriteKit
 
-extension SKNode {
-    class func unarchiveFromFile(file : NSString) -> SKNode? {
-        if let path = NSBundle.mainBundle().pathForResource(file, ofType: "sks") {
-            var sceneData = NSData.dataWithContentsOfFile(path, options: .DataReadingMappedIfSafe, error: nil)
-            var archiver = NSKeyedUnarchiver(forReadingWithData: sceneData)
-            
-            archiver.setClass(self.classForKeyedUnarchiver(), forClassName: "SKScene")
-            let scene = archiver.decodeObjectForKey(NSKeyedArchiveRootObjectKey) as GameScene
-            archiver.finishDecoding()
-            return scene
-        } else {
-            return nil
-        }
-    }
-}
-
 class GameViewController: UIViewController {
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-
-        if let scene = GameScene.unarchiveFromFile("GameScene") as? GameScene {
-            // Configure the view.
-            let skView = self.view as SKView
-            skView.showsFPS = true
-            skView.showsNodeCount = true
-            
-            /* Sprite Kit applies additional optimizations to improve rendering performance */
-            skView.ignoresSiblingOrder = true
-            
-            /* Set the scale mode to scale to fit the window */
-            scene.scaleMode = .AspectFill
-            
-            skView.presentScene(scene)
-        }
+    var scene: GameScene!
+    var level: Level!
+    
+    func beginGame() {
+        shuffle()
+    }
+    
+    func shuffle() {
+        let newCookies = level.shuffle()
+        scene.addSpritesForCookies(newCookies)
+    }
+    
+    override func prefersStatusBarHidden() -> Bool {
+        return true
     }
 
     override func shouldAutorotate() -> Bool {
         return true
     }
-
+    
     override func supportedInterfaceOrientations() -> Int {
-        if UIDevice.currentDevice().userInterfaceIdiom == .Phone {
-            return Int(UIInterfaceOrientationMask.AllButUpsideDown.toRaw())
-        } else {
-            return Int(UIInterfaceOrientationMask.All.toRaw())
+        return Int(UIInterfaceOrientationMask.AllButUpsideDown.toRaw())
+    }
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        //Configure the view
+        let skView = view as SKView
+        skView.multipleTouchEnabled = false
+        
+        //Create and configure the scene
+        scene = GameScene(size: skView.bounds.size)
+        scene.scaleMode = .AspectFill
+        
+        level = Level(filename: "Level_1")
+        scene.level = level
+        scene.addTiles()
+        
+        scene.swipeHandler = handleSwipe
+        
+        //Present the scene
+        skView.presentScene(scene)
+        beginGame()
+    }
+    
+    func handleMatches() {
+        let chains = level.removeMatches()
+        scene.animateMatchedCookies(chains) {
+            let columns = self.level.fillHoles()
+            self.scene.animateFallingCookies(columns) {
+                let columns = self.level.topUpCookies()
+                self.scene.animateNewCookies(columns) {
+                    self.view.userInteractionEnabled = true
+                }
+            }
         }
     }
 
-    override func didReceiveMemoryWarning() {
-        super.didReceiveMemoryWarning()
-        // Release any cached data, images, etc that aren't in use.
-    }
-
-    override func prefersStatusBarHidden() -> Bool {
-        return true
+    func handleSwipe(swap: Swap) {
+        // While cookies are being matched and new cookies fall down to fill up
+        // the holes, we don't want the player to tap on anything.
+        view.userInteractionEnabled = false
+        
+        if level.isPossibleSwap(swap) {
+            level.performSwap(swap)
+            scene.animateSwap(swap, completion: handleMatches)
+        } else {
+            scene.animateInvalidSwap(swap) {
+                self.view.userInteractionEnabled = true
+            }
+        }
     }
 }
